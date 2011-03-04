@@ -5,11 +5,7 @@
  * @file
  * Process payments using Authorize.net. Supports AIM
  *
- * Development sponsored by Digital Dollhouse - http://www.digitaldollhouse.com
  */
-
-define('UC_AUTHORIZENET_TEST_GATEWAY_URL', 'https://test.authorize.net/gateway/transact.dll');
-define('UC_AUTHORIZENET_LIVE_GATEWAY_URL', 'https://secure.authorize.net/gateway/transact.dll');
 
 /**
  * Implementation of hook_menu().
@@ -29,11 +25,16 @@ function uc_authnet_payment_gateway() {
     'title' => t('Authorize.net'),
     'description' => t('Process credit card payments using the AIM service of Authorize.net.'),
     'settings' => 'uc_authnet_settings_form', // defined in uc_authnet.admin.php
-    'echeck' => 'uc_authnet_process',
     'credit' => 'uc_authnet_process',
-    'credit_txn_types' => array(UC_CREDIT_AUTH_ONLY, UC_CREDIT_PRIOR_AUTH_CAPTURE, UC_CREDIT_AUTH_CAPTURE, UC_CREDIT_REFERENCE_SET, UC_CREDIT_REFERENCE_TXN),
+    'credit_txn_types' => array(
+      UC_CREDIT_AUTH_ONLY,
+      UC_CREDIT_PRIOR_AUTH_CAPTURE,
+      UC_CREDIT_AUTH_CAPTURE,
+      UC_CREDIT_REFERENCE_SET,
+      UC_CREDIT_REFERENCE_TXN
+    ),
+    'echeck' => 'uc_authnet_process',
   );
-
   return $gateways;
 }
 
