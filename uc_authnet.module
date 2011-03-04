@@ -28,9 +28,9 @@ function uc_authnet_payment_gateway() {
     'id' => 'authorizenet',
     'title' => t('Authorize.net'),
     'description' => t('Process credit card payments using the AIM service of Authorize.net.'),
-    'settings' => 'uc_authnet_settings_form',
-    'echeck' => 'uc_authnet_echeck',
-    'credit' => 'uc_authnet_charge',
+    'settings' => 'uc_authnet_settings_form', // defined in uc_authnet.admin.php
+    'echeck' => 'uc_authnet_process',
+    'credit' => 'uc_authnet_process',
     'credit_txn_types' => array(UC_CREDIT_AUTH_ONLY, UC_CREDIT_PRIOR_AUTH_CAPTURE, UC_CREDIT_AUTH_CAPTURE, UC_CREDIT_REFERENCE_SET, UC_CREDIT_REFERENCE_TXN),
   );
 
@@ -41,143 +41,18 @@ function uc_authnet_payment_gateway() {
  * Load the required files/classes to use the authnet php sdk.
  */
 function uc_authnet_setup() {
-  static $setup;
-
-  if (!isset($setup)) {
-    require_once 'anet_php_sdk/AuthorizeNet.php';
-    define("AUTHORIZENET_API_LOGIN_ID", variable_get('uc_authnet_api_login_id', ''));
-    define("AUTHORIZENET_TRANSACTION_KEY", variable_get('uc_authnet_api_transaction_key', ''));
-    $setup = TRUE;
+  require_once 'anet_php_sdk/AuthorizeNet.php';
+  define("AUTHORIZENET_API_LOGIN_ID", variable_get('uc_authnet_api_login_id', ''));
+  define("AUTHORIZENET_TRANSACTION_KEY", variable_get('uc_authnet_api_transaction_key', ''));
+  
+  if (variable_get('uc_authnet_aim_txn_mode', '') == 'developer_test') {
+    define("AUTHORIZENET_SANDBOX", true);
   }
 }
 
-/**
- * Callback for payment gateway settings.
- */
-function uc_authnet_settings_form() {
-  $login_data = _uc_authnet_login_data();
-
-  // Allow admin to set duplicate window
-  $form['uc_authnet_duplicate_window'] = array(
-    '#type' => 'select',
-    '#title' => t('Duplicate window'),
-    '#description' => t('Blocks submission of duplicate transactions within the specified window.  Defaults to 120 seconds.'),
-    '#default_value' => variable_get('uc_authnet_duplicate_window', 120),
-    '#options' => drupal_map_assoc(array(0, 15, 30, 45, 60, 75, 90, 105, 120)),
-  );
-
-  $form['api_id_key'] = array(
-    '#type' => 'fieldset',
-    '#title' => t('API Login ID and Transaction Key'),
-    '#description' => t('This information is required for Ubercart to interact with your payment gateway account.  It is different from your login ID and password and may be found through your account settings page.  Do not change the gateway URLs unless you are using this module with an Authorize.net-compatible gateway that requires different URLs.'),
-  );
-  $form['api_id_key']['uc_authnet_api_login_id'] = array(
-    '#type' => 'textfield',
-    '#title' => t('API Login ID'),
-    '#default_value' => variable_get('uc_authnet_api_login_id', ''),
-  );
-  $form['api_id_key']['uc_authnet_api_transaction_key'] = array(
-    '#type' => 'textfield',
-    '#title' => t('Transaction Key'),
-    '#default_value' => variable_get('uc_authnet_api_transaction_key', ''),
-  );
-  $form['api_id_key']['uc_authnet_api_test_gateway_url'] = array(
-    '#type' => 'textfield',
-    '#title' => t('Authorize.net Test Gateway URL'),
-    '#default_value' => variable_get('uc_authnet_api_test_gateway_url',
-                                     UC_AUTHORIZENET_TEST_GATEWAY_URL),
-  );
-  $form['api_id_key']['uc_authnet_api_live_gateway_url'] = array(
-    '#type' => 'textfield',
-    '#title' => t('Authorize.net Live Gateway URL'),
-    '#default_value' => variable_get('uc_authnet_api_live_gateway_url',
-                                     UC_AUTHORIZENET_LIVE_GATEWAY_URL),
-  );
-
-  $form['aim_settings'] = array(
-    '#type' => 'fieldset',
-    '#title' => t('AIM settings'),
-    '#description' => t('These settings pertain to the Authorize.Net AIM payment method for card not present & eCheck.net transactions.'),
-  );
-  $form['aim_settings']['uc_authnet_aim_txn_mode'] = array(
-    '#type' => 'radios',
-    '#title' => t('Transaction mode'),
-    '#description' => t('Only specify a developer test account if you login to your account through https://test.authorize.net.<br />Adjust to live transactions when you are ready to start processing real payments.'),
-    '#options' => array(
-      'live' => t('Live transactions in a live account'),
-      'live_test' => t('Test transactions in a live account'),
-      'developer_test' => t('Developer test account transactions'),
-    ),
-    '#default_value' => variable_get('uc_authnet_aim_txn_mode', 'live_test'),
-  );
-  $form['aim_settings']['uc_authnet_aim_email_customer'] = array(
-    '#type' => 'checkbox',
-    '#title' => t('Tell Authorize.net to e-mail the customer a receipt based on your account settings.'),
-    '#default_value' => variable_get('uc_authnet_aim_email_customer', FALSE),
-  );
-  $form['aim_settings']['uc_authnet_response_debug'] = array(
-    '#type' => 'checkbox',
-    '#title' => t('Log full API response messages from Authorize.net for debugging.'),
-    '#default_value' => variable_get('uc_authnet_response_debug', FALSE),
-  );
-
-  if (module_exists('uc_echeck')) {
-    $form['echeck_settings'] = array(
-      '#type' => 'fieldset',
-      '#title' => t('eCheck settings'),
-      '#description' => t('These settings pertain to the Authorize.Net eCheck.net service.')
-    );
-    $form['echeck_settings']['uc_authnet_echeck'] = array(
-      '#type' => 'checkbox',
-      '#title' => t('Enable the eCheck.net service as a payment gateway.'),
-      '#default_value' => variable_get('uc_authnet_echeck', FALSE),
-    );
-  }
-
-  if (module_exists('uc_cim')){
-    $form['cim_settings'] = array(
-      '#type' => 'fieldset',
-      '#title' => t('CIM settings'),
-      '#description' => t('These settings pertain to the Authorize.Net Customer Information Management service.')
-    );
-    $form['cim_settings']['uc_authnet_cim_profile'] = array(
-      '#type' => 'checkbox',
-      '#title' => t('Always create a CIM profile for securely storing payment (CC or eCheck) info for later use.'),
-      '#default_value' => variable_get('uc_authnet_cim_profile', FALSE),
-    );
-  }
-
-  return $form;
-}
-
-/**
- * Implementation of hook_form_alter().
- */
-function uc_authnet_form_alter(&$form, $form_state, $form_id) {
-  if ($form_id == 'uc_payment_gateways_form') {
-    $form['#submit'][] = 'uc_authnet_payment_gateway_settings_submit';
-  }
-}
-
-// Submit handler for payment gateway settings form to encrypt fields.
-function uc_authnet_payment_gateway_settings_submit($form, &$form_state) {
-  // If CC encryption has been configured properly.
-  if ($key = uc_credit_encryption_key()) {
-    // Setup our encryption object.
-    $crypt = new uc_encryption_class;
-
-    // Encrypt the Login ID, Transaction key, and MD5 Hash.
-    if (!empty($form_state['values']['uc_authnet_md5_hash'])) {
-      variable_set('uc_authnet_md5_hash', $crypt->encrypt($key, $form_state['values']['uc_authnet_md5_hash']));
-    }
-
-    // Store any errors.
-    uc_store_encryption_errors($crypt, 'uc_authnet');
-  }
-}
 
 // Main handler for processing credit card transactions.
-function uc_authnet_charge($order_id, $amount, $data) {
+function uc_authnet_process($order_id, $amount, $data) {
   
   // Load the order.
   $order = uc_order_load($order_id);
@@ -201,35 +76,7 @@ function uc_authnet_charge($order_id, $amount, $data) {
 
     // Accommodate all other transaction types.
     default:
-      return _uc_authnet_charge($order, $amount, $data);
-  }
-}
-// Main handler for processing eCheck.
-function uc_authnet_echeck($order_id, $amount, $data) {
-  
-  // Load the order.
-  $order = uc_order_load($order_id);
-
-  // Perform the appropriate action based on the transaction type.
-  switch ($data['txn_type']) {
-    
-    // Reference transactions are handled through Authorize.Net's CIM.
-    case UC_CREDIT_REFERENCE_TXN:
-      return _uc_authnet_cim_profile_charge($order, $amount, $data);
-
-    // Set a reference only.
-    case UC_CREDIT_REFERENCE_SET:
-      // Return the error message if this failed.
-      if ($message = _uc_authnet_cim_profile_create($order)) {
-        return array('success' => FALSE, 'message' => $message);
-      }
-      else {
-        return array('success' => TRUE, 'message' => t('New customer profile created successfully at Authorize.Net.'));
-      }
-
-    // Accommodate all other transaction types.
-    default:
-      return _uc_authnet_charge($order, $amount, $data);
+      return _uc_authnet_process($order, $amount, $data);
   }
 }
 
@@ -409,18 +256,16 @@ function _uc_authorizenet_cim_payment_profile_get($order, $profile_id, $payment_
 /**
  * Handles authorizations and captures through AIM at Authorize.Net
  */
-function _uc_authnet_charge($order, $amount, $data) {
+function _uc_authnet_process($order, $amount, $data) {
   global $user;
 
-  // Build a description of the order for logging in Auth.Net.
-  $description = array();
-  foreach ((array) $order->products as $product) {
-    $description[] = $product->qty .'x '. $product->model;
-  }
+  uc_authnet_setup();
+  $request = new AuthorizeNetAIM;
 
-  $billing_country = uc_get_country_data(array('country_id' => $order->billing_country));
-  $delivery_country = uc_get_country_data(array('country_id' => $order->delivery_country));
-
+  if (variable_get('uc_authnet_aim_txn_mode', '')) {
+    $request->setSandbox(true);
+  };
+  
   $context = array(
     'revision' => 'formatted-original',
     'type' => 'amount',
@@ -430,147 +275,114 @@ function _uc_authnet_charge($order, $amount, $data) {
     'thou' => FALSE,
     'dec' => '.',
   );
+  
+  // Build the line items for logging in Auth.Net.
+  foreach ($order->products as $product) {
+    // dpm($product);
+    $request->addLineItem(
+      $product->model, // item_id
+      $product->title, // item_name
+      '', // item_description
+      $product->qty, // item_quantity
+      uc_price($product->price, $context, $options), // $item_unit_price
+      'N' // $item_taxable
+    );
+  };
 
-  // Build the POST data for the transaction.
-  $submit_data = array(
-    // Merchant Information
-    'x_login' => variable_get('uc_authnet_api_login_id', ''),
-    'x_tran_key' => variable_get('uc_authnet_api_transaction_key', ''),
+  $billing_country = uc_get_country_data(array('country_id' => $order->billing_country));
+  $delivery_country = uc_get_country_data(array('country_id' => $order->delivery_country));
 
-    // Transaction Information
-    'x_version' => '3.1',
-    'x_type' => _uc_authorizenet_txn_map($data['txn_type']),
-    // 'x_method' => $order->payment_method == 'credit' ? 'CC' : 'ECHECK',
-    'x_method' => 'CC',
-    // 'x_recurring_billing' => 'FALSE',
-    'x_amount' => uc_price($amount, $context, $options),
-    'x_card_num' => $order->payment_details['cc_number'],
-    'x_exp_date' => $order->payment_details['cc_exp_month'] .'/'. $order->payment_details['cc_exp_year'],
-    'x_card_code' => $order->payment_details['cc_cvv'],
-    // 'x_trans_id' => '',
-    // 'x_auth_code' => '',
-    'x_test_request' => variable_get('uc_authnet_aim_txn_mode', 'live_test') == 'live_test' ? 'TRUE' : 'FALSE',
-    'x_duplicate_window' => variable_get('uc_authnet_duplicate_window', 120),
-
-    // Order Information
-    'x_invoice_num' => $order->order_id,
-    'x_description' => substr(implode(', ', $description), 0, 255),
-
-    // Customer Information
-    'x_first_name' => substr($order->billing_first_name, 0, 50),
-    'x_last_name' => substr($order->billing_last_name, 0, 50),
-    'x_company' => substr($order->billing_company, 0, 50),
-    'x_address' => substr($order->billing_street1, 0, 60),
-    'x_city' => substr($order->billing_city, 0, 40),
-    'x_state' => substr(uc_get_zone_code($order->billing_zone), 0, 40),
-    'x_zip' => substr($order->billing_postal_code, 0, 20),
-    'x_country' => !$billing_country ? '' : $billing_country[0]['country_iso_code_2'],
-    'x_phone' => substr($order->billing_phone, 0, 25),
-    // 'x_fax' => substr('', 0, 25),
-    'x_email' => substr($order->primary_email, 0, 255),
-    'x_cust_id' => substr($order->uid, 0, 20),
-    'x_customer_ip' => substr(ip_address(), 0, 15),
-
-    // Shipping Information
-    'x_ship_to_first_name' => substr($order->delivery_first_name, 0, 50),
-    'x_ship_to_last_name' => substr($order->delivery_last_name, 0, 50),
-    'x_ship_to_company' => substr($order->delivery_company, 0, 50),
-    'x_ship_to_address' => substr($order->delivery_street1, 0, 60),
-    'x_ship_to_city' => substr($order->delivery_city, 0, 40),
-    'x_ship_to_state' => substr(uc_get_zone_code($order->delivery_zone), 0, 40),
-    'x_ship_to_zip' => substr($order->delivery_postal_code, 0, 20),
-    'x_ship_to_country' => !$delivery_country ? '' : $delivery_country[0]['country_iso_code_2'],
-
-    // Extra Information
-    'x_delim_data' => 'TRUE',
-    'x_delim_char' => '|',
-    'x_encap_char' => '"',
-    'x_relay_response' => 'FALSE',
-    'x_email_customer' => variable_get('uc_authnet_aim_email_customer', FALSE) ? 'TRUE' : 'FALSE',
-  );
-
-  if ($data['txn_type'] == UC_CREDIT_PRIOR_AUTH_CAPTURE) {
-    $submit_data['x_trans_id'] = $data['auth_id'];
+  // Build the data for the transaction.
+  
+  // Order Information
+  $request->invoice_num = $order->order_id;
+  $request->description = 'Online Gift from ' . $_SERVER['HTTP_HOST'];
+  $request->amount = uc_price($amount, $context, $options);
+  
+  // Payment Method information
+  if ($order->payment_method == 'credit'){
+    $request->method = 'CC';
+    $request->card_num = $order->payment_details['cc_number'];
+    $request->exp_date = $order->payment_details['cc_exp_month'] .'/'. $order->payment_details['cc_exp_year'];
+    $request->card_code = $order->payment_details['cc_cvv'];
   }
+  if ($order->payment_method == 'echeck'){
+    $request->method = 'echeck';
+    $request->bank_aba_code = $order->payment_details['echeck_bank_aba_code'];
+    $request->bank_acct_num = $order->payment_details['echeck_bank_acct_num'];
+    $request->bank_acct_type = $order->payment_details['echeck_bank_acct_type'];
+    $request->bank_name = $order->payment_details['echeck_bank_name'];
+    $request->bank_acct_name = $order->payment_details['echeck_bank_acct_name'];
+    $request->echeck_type = 'WEB';
+  }
+  // 'duplicate_window' => variable_get('uc_authnet_duplicate_window', 120),
+  
+  
+  // Customer Information
+  $request->first_name = substr($order->billing_first_name, 0, 50);
+  $request->last_name = substr($order->billing_last_name, 0, 50);
+  $request->company = substr($order->billing_company, 0, 50);
+  $request->address = substr($order->billing_street1, 0, 60);
+  $request->city = substr($order->billing_city, 0, 40);
+  $request->state = substr(uc_get_zone_code($order->billing_zone), 0, 40);
+  $request->zip = substr($order->billing_postal_code, 0, 20);
+  $request->country = !$billing_country ? '' : $billing_country[0]['country_iso_code_2'];
+  $request->phone = substr($order->billing_phone, 0, 25);
+  // $request->fax => substr('', 0, 25);
+  $request->email = substr($order->primary_email, 0, 255);
+  $request->cust_id = substr($order->uid, 0, 20);
+  $request->customer_ip = substr(ip_address(), 0, 15);
 
-  // Determine the correct URL based on the transaction mode.
-  if (variable_get('uc_authnet_aim_txn_mode', 'live_test') == 'developer_test') {
-    $post_url = variable_get('uc_authnet_api_test_gateway_url',
-                             UC_AUTHORIZENET_TEST_GATEWAY_URL);
-  }
-  else {
-    $post_url = variable_get('uc_authnet_api_live_gateway_url',
-                             UC_AUTHORIZENET_LIVE_GATEWAY_URL);
-  }
+  $request->email_customer = variable_get('uc_authnet_aim_email_customer', FALSE) ? 'TRUE' : 'FALSE';
+
+  // Shipping Information
+  $request->ship_to_first_name = substr($order->delivery_first_name, 0, 50);
+  $request->ship_to_last_name = substr($order->delivery_last_name, 0, 50);
+  $request->ship_to_company = substr($order->delivery_company, 0, 50);
+  $request->ship_to_address = substr($order->delivery_street1, 0, 60);
+  $request->ship_to_city = substr($order->delivery_city, 0, 40);
+  $request->ship_to_state = substr(uc_get_zone_code($order->delivery_zone), 0, 40);
+  $request->ship_to_zip = substr($order->delivery_postal_code, 0, 20);
+  $request->ship_to_country = !$delivery_country ? '' : $delivery_country[0]['country_iso_code_2'];
 
   // Translate the data array into a string we can POST.
-  $post_fields = array();
-  foreach ($submit_data as $key => $value) {
-    $post_fields[] = $key .'='. urlencode($value);
-  }
-
-  // Setup the cURL request.
-  $ch = curl_init();
-  curl_setopt($ch, CURLOPT_URL, $post_url);
-  curl_setopt($ch, CURLOPT_VERBOSE, 0);
-  curl_setopt($ch, CURLOPT_POST, 1);
-  curl_setopt($ch, CURLOPT_POSTFIELDS, implode('&', $post_fields));
-  curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
-  curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, 0);
-  curl_setopt($ch, CURLOPT_NOPROGRESS, 1);
-  curl_setopt($ch, CURLOPT_FOLLOWLOCATION, 0);
-  $result = curl_exec($ch);
-
-  // Log any errors to the watchdog.
-  if ($error = curl_error($ch)) {
-    watchdog('uc_authorizenet', 'cURL error: @error', array('@error' => $error), WATCHDOG_ERROR);
-    return array('success' => FALSE);
-  }
-  curl_close($ch);
-
-  $response = explode('|', $result);
+  $response = $request->authorizeAndCapture();
+  // dsm($request);
+  dsm($response);
 
   if (variable_get('uc_authnet_response_debug', FALSE)) {
-    watchdog('uc_authorizenet', 'Debug response: !data', array('!data' => '<pre>'. check_plain(print_r($response, TRUE)) .'</pre>'));
+    watchdog('uc_authnet', 'Debug response: !data', array('!data' => '<pre>'. check_plain(print_r($response, TRUE)) .'</pre>'));
   }
-
-  // Trim off the encapsulating character from the results.
-  for ($i = 0; $i < count($response); $i++) {
-    $response[$i] = substr($response[$i], 1, strlen($response[$i]) - 2);
-  }
-
-  /**
-   * Response key index:
-   * 0 = Response Code
-   * 2 = Response Reason Code
-   * 3 = Response Reason Text
-   * 4 = Authorization Code
-   * 5 = Address Verification Service (AVS) Response
-   * 6 = Transaction ID; needed for CREDIT, PRIOR_AUTH_CAPTURE, and VOID transactions.
-   * 9 = Amount
-   * 11 = Transaction Type
-   * 32 = Tax Amount Charged
-   * 37 = Transaction Response MD5 Hash
-   * 38 = Card Code (CVV) Response
-   */
 
   // If we didn't get an approval response code...
-  if ($response[0] != '1') {
+  if ($response->error) {
     // Fail the charge with the reason text in the decline message.
     $result = array(
       'success' => FALSE,
-      'message' => t('Credit card payment declined: @message', array('@message' => $response[3])),
+      'message' => t('Payment error: @message', array('@message' => $response->response_reason_text)),
       'uid' => $user->uid,
     );
+    drupal_set_message('Payment Error: ' . $response->response_reason_text);
+  }
+  
+  elseif ($response->declined) {
+    // Fail the charge with the reason text in the decline message.
+    $result = array(
+      'success' => FALSE,
+      'message' => t('Credit card payment declined: @message', array('@message' => $response->response_reason_text)),
+      'uid' => $user->uid,
+    );
+    drupal_set_message('Payment Error: ' . $response->response_reason_text);
   }
   else {
     // Build a message for display and comments in the payments table.
-    $message = t('Type: @type<br />ID: @id', array('@type' => _uc_authorizenet_txn_type($response[11]), '@id' => $response[6]));
+    // the comment is visible on: admin/store/orders/%/payments
+    $message = t('Type: @type<br />ID: @id', array('@type' => _uc_authnet_txn_type($response->transaction_type), '@id' => $response->transaction_id));
     $result = array(
       'success' => TRUE,
       'comment' => $message,
       'message' => $message,
-      'data' => array('module' => 'uc_authorizenet', 'txn_type' => $response[11], 'txn_id' => $response[6]),
+      'data' => array('module' => 'uc_authnet', 'txn_type' => _uc_authnet_txn_type($response->transaction_type), 'txn_id' => $response->transaction_id),
       'uid' => $user->uid,
     );
 
@@ -585,10 +397,10 @@ function _uc_authnet_charge($order, $amount, $data) {
 
     // Create a transaction reference if specified in the payment gateway
     // settings and this is an appropriate transaction type.
-    if (variable_get('uc_authnet_cim_profile', FALSE) && in_array($data['txn_type'], array(UC_CREDIT_AUTH_ONLY, UC_CREDIT_AUTH_CAPTURE))) {
-      // Ignore the returned message for now; that will appear in the comments.
-      _uc_authorizenet_cim_profile_create($order);
-    }
+    // if (variable_get('uc_authnet_cim_profile', FALSE) && in_array($data['txn_type'], array(UC_CREDIT_AUTH_ONLY, UC_CREDIT_AUTH_CAPTURE))) {
+    //   // Ignore the returned message for now; that will appear in the comments.
+    //   _uc_authorizenet_cim_profile_create($order);
+    // }
   }
 
   // Don't log this as a payment money wasn't actually captured.
@@ -602,11 +414,11 @@ function _uc_authnet_charge($order, $amount, $data) {
     'type' => 'amount',
   );
   $comment = t('<b>@type</b><br /><b>@status:</b> @message<br />Amount: @amount<br />AVS response: @avs',
-    array('@type' => _uc_authorizenet_txn_type($response[11]), '@status' => $result['success'] ? t('ACCEPTED') : t('REJECTED'), '@message' => $response[3], '@amount' => uc_price($response[9], $context), '@avs' => _uc_authorizenet_avs($response[5])));
+    array('@type' => _uc_authnet_txn_type($response->transaction_type), '@status' => $result['success'] ? t('ACCEPTED') : t('REJECTED'), '@message' => $response->response_reason_text, '@amount' => uc_price($response->amount, $context), '@avs' => _uc_authnet_avs($response->avs_response)));
 
   // Add the CVV response if enabled.
   if (variable_get('uc_credit_cvv_enabled', TRUE)) {
-    $comment .= '<br />'. t('CVV match: @cvv', array('@cvv' => _uc_authorizenet_cvv($response[38])));
+    $comment .= '<br />'. t('CVV match: @cvv', array('@cvv' => _uc_authnet_cvv($response->card_code_response)));
   }
 
   // Save the comment to the order.
@@ -690,7 +502,7 @@ function _uc_authorizenet_array_to_xml($data) {
 }
 
 // Returns the message text for an AVS response code.
-function _uc_authorizenet_avs($code) {
+function _uc_authnet_avs($code) {
   $text = $code .' - ';
 
   switch ($code) {
@@ -739,7 +551,7 @@ function _uc_authorizenet_avs($code) {
 }
 
 // Returns the message text for a CVV match.
-function _uc_authorizenet_cvv($code) {
+function _uc_authnet_cvv($code) {
   $text = $code .' - ';
 
   switch ($code) {
@@ -764,7 +576,7 @@ function _uc_authorizenet_cvv($code) {
 }
 
 // Returns the title of the transaction type.
-function _uc_authorizenet_txn_type($type) {
+function _uc_authnet_txn_type($type) {
   switch (strtoupper($type)) {
     case 'AUTH_CAPTURE':
       return t('Authorization and capture');
@@ -782,7 +594,7 @@ function _uc_authorizenet_txn_type($type) {
 }
 
 // Returns the Auth.Net transaction type corresponding to a UC type.
-function _uc_authorizenet_txn_map($type) {
+function _uc_authnet_txn_map($type) {
   switch ($type) {
     case UC_CREDIT_AUTH_ONLY:
       return 'AUTH_ONLY';
@@ -800,7 +612,7 @@ function _uc_authorizenet_txn_map($type) {
 /**
  * Map an order's billing information to an array for later XML conversion.
  */
-function _uc_authorize_cim_xml_billto($order) {
+function _uc_authnet_cim_xml_billto($order) {
   $billing_country = uc_get_country_data(array('country_id' => $order->billing_country));
   return array(
     'firstName' => substr($order->billing_first_name, 0, 50),

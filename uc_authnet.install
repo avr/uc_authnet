@@ -9,7 +9,7 @@
 /**
  * Implementation of hook_requirements().
  */
-function uc_authorizenet_requirements($phase) {
+function uc_authnet_requirements($phase) {
   $t = get_t();
 
   $has_curl = function_exists('curl_init');
