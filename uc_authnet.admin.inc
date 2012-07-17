@@ -8,22 +8,13 @@
 /**
  * Callback for payment gateway settings.
  */
-function uc_authnet_settings_form() {
+function _uc_authnet_settings_form() {
   $login_data = _uc_authnet_login_data();
-
-  // Allow admin to set duplicate window
-  $form['uc_authnet_duplicate_window'] = array(
-    '#type' => 'select',
-    '#title' => t('Duplicate window'),
-    '#description' => t('Blocks submission of duplicate transactions within the specified window.  Defaults to 120 seconds.'),
-    '#default_value' => variable_get('uc_authnet_duplicate_window', 120),
-    '#options' => drupal_map_assoc(array(0, 15, 30, 45, 60, 75, 90, 105, 120)),
-  );
 
   $form['api_id_key'] = array(
     '#type' => 'fieldset',
     '#title' => t('API Login ID and Transaction Key'),
-    '#description' => t('This information is required for Ubercart to interact with your payment gateway account.  It is different from your login ID and password and may be found through your account settings page.  Do not change the gateway URLs unless you are using this module with an Authorize.net-compatible gateway that requires different URLs.'),
+    '#description' => t('This information is required for Ubercart to interact with your payment gateway account. It is different from your login ID and password and may be found through your account settings page. Do not change the gateway URLs unless you are using this module with an Authorize.net-compatible gateway that requires different URLs.'),
   );
   $form['api_id_key']['uc_authnet_api_login_id'] = array(
     '#type' => 'textfield',
@@ -38,20 +29,18 @@ function uc_authnet_settings_form() {
   $form['api_id_key']['uc_authnet_api_test_gateway_url'] = array(
     '#type' => 'textfield',
     '#title' => t('Authorize.net Test Gateway URL'),
-    '#default_value' => variable_get('uc_authnet_api_test_gateway_url',
-                                     UC_AUTHORIZENET_TEST_GATEWAY_URL),
+    '#default_value' => variable_get('uc_authnet_api_test_gateway_url', UC_AUTHORIZENET_TEST_GATEWAY_URL),
   );
   $form['api_id_key']['uc_authnet_api_live_gateway_url'] = array(
     '#type' => 'textfield',
     '#title' => t('Authorize.net Live Gateway URL'),
-    '#default_value' => variable_get('uc_authnet_api_live_gateway_url',
-                                     UC_AUTHORIZENET_LIVE_GATEWAY_URL),
+    '#default_value' => variable_get('uc_authnet_api_live_gateway_url', UC_AUTHORIZENET_LIVE_GATEWAY_URL),
   );
 
   $form['aim_settings'] = array(
     '#type' => 'fieldset',
-    '#title' => t('AIM settings'),
-    '#description' => t('These settings pertain to the Authorize.Net AIM payment method for card not present & eCheck.net transactions.'),
+    '#title' => t('Transaction settings'),
+    '#description' => t('These settings pertain to the Authorize.Net AIM payment method for card not present & eCheck transactions.'),
   );
   $form['aim_settings']['uc_authnet_aim_txn_mode'] = array(
     '#type' => 'radios',
@@ -63,6 +52,15 @@ function uc_authnet_settings_form() {
       'developer_test' => t('Developer test account transactions'),
     ),
     '#default_value' => variable_get('uc_authnet_aim_txn_mode', 'live_test'),
+  );
+  
+  // Allow admin to set duplicate window
+  $form['aim_settings']['uc_authnet_duplicate_window'] = array(
+    '#type' => 'select',
+    '#title' => t('Duplicate window'),
+    '#description' => t('Blocks submission of duplicate transactions within the specified window.  Defaults to 120 seconds.'),
+    '#default_value' => variable_get('uc_authnet_duplicate_window', 120),
+    '#options' => drupal_map_assoc(array(0, 15, 30, 45, 60, 75, 90, 105, 120)),
   );
   $form['aim_settings']['uc_authnet_aim_email_customer'] = array(
     '#type' => 'checkbox',
@@ -79,7 +77,7 @@ function uc_authnet_settings_form() {
     $form['echeck_settings'] = array(
       '#type' => 'fieldset',
       '#title' => t('eCheck settings'),
-      '#description' => t('These settings pertain to the Authorize.Net eCheck.net service. This is an add on service that is not included by default with your Authorize.net gateway fees.')
+      '#description' => t('These settings pertain to the Authorize.Net eCheck service. This is an add on service that is not included by default with your Authorize.net gateway fees.')
     );
     $form['echeck_settings']['uc_authnet_echeck'] = array(
       '#type' => 'checkbox',
@@ -103,20 +101,21 @@ function uc_authnet_settings_form() {
 
   return $form;
 }
-
 /**
  * Implementation of hook_form_alter().
  */
 function uc_authnet_form_alter(&$form, $form_state, $form_id) {
   if ($form_id == 'uc_payment_gateways_form') {
-    $form['#submit'][] = 'uc_authnet_payment_gateway_settings_submit';
+    $form['#submit'][] = '_uc_authnet_payment_gateway_settings_submit';
   }
 }
 
-// Submit handler for payment gateway settings form to encrypt fields.
-function uc_authnet_payment_gateway_settings_submit($form, &$form_state) {
+/**
+ * Submit handler for payment gateway settings form to encrypt fields.
+ */
+function _uc_authnet_payment_gateway_settings_submit($form, &$form_state) {
   // If CC & eCheck encryption have been configured properly.
-  if (($key = uc_credit_encryption_key()) || ($key = uc_echeck_encryption_key()) {
+  if ($key = uc_credit_encryption_key() || $echeck_key = uc_echeck_encryption_key()) {
     // Setup our encryption object.
     $crypt = new uc_encryption_class;
 
@@ -130,7 +129,7 @@ function uc_authnet_payment_gateway_settings_submit($form, &$form_state) {
   }
 }
 
-
+/*
 // Displays a form to update a subscriptions's CC info.
 function uc_authorizenet_arb_admin_update_form($form_state, $rfid) {
   $order = new stdClass();
@@ -217,3 +216,4 @@ function uc_authorizenet_arb_admin_cancel_form_submit($form, &$form_state) {
 
   $form_state['redirect'] = 'admin/store/orders/recurring';
 }
+*/
